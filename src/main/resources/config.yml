@@ -1,0 +1,181 @@
+title: "&8DangShop"
+
+messages:
+  bought: "&aBeli &f%amount%x %item% &auntuk &f$%price%"
+  sold: "&aJual &f%amount%x %item% &auntuk &f$%price%"
+  no-money: "&cDuit tak cukup."
+  no-items: "&cAwak tiada item tu."
+  cant-buy: "&cItem ni tak boleh dibeli."
+  cant-sell: "&cItem ni tak boleh dijual."
+  inv-full: "&cInventori penuh."
+  no-economy: "&cSistem duit (Vault) tak jumpa."
+  reloaded: "&aConfig dimuat semula."
+
+# Format item: "MATERIAL HARGA_BELI HARGA_JUAL"  (guna 0 untuk matikan beli atau jual)
+sections:
+  combat:
+    name: "&cCombat"
+    icon: TOTEM_OF_UNDYING
+    slot: 19
+    items:
+      - "TOTEM_OF_UNDYING 500 100"
+      - "GOLDEN_APPLE 100 25"
+      - "ENCHANTED_GOLDEN_APPLE 2000 500"
+      - "ENDER_PEARL 50 10"
+      - "BOW 150 40"
+      - "CROSSBOW 200 50"
+      - "ARROW 5 1"
+      - "SPECTRAL_ARROW 10 2"
+      - "SHIELD 120 30"
+      - "DIAMOND_SWORD 600 150"
+      - "NETHERITE_SWORD 3000 750"
+      - "TRIDENT 1500 375"
+      - "MACE 5000 1250"
+      - "WIND_CHARGE 20 5"
+      - "TNT 40 10"
+      - "END_CRYSTAL 150 40"
+      - "COBWEB 15 4"
+      - "FIREWORK_ROCKET 10 2"
+  armor:
+    name: "&bArmor"
+    icon: DIAMOND_CHESTPLATE
+    slot: 20
+    items:
+      - "IRON_HELMET 200 50"
+      - "IRON_CHESTPLATE 320 80"
+      - "IRON_LEGGINGS 280 70"
+      - "IRON_BOOTS 160 40"
+      - "DIAMOND_HELMET 1000 250"
+      - "DIAMOND_CHESTPLATE 1600 400"
+      - "DIAMOND_LEGGINGS 1400 350"
+      - "DIAMOND_BOOTS 800 200"
+      - "NETHERITE_HELMET 5000 1250"
+      - "NETHERITE_CHESTPLATE 8000 2000"
+      - "NETHERITE_LEGGINGS 7000 1750"
+      - "NETHERITE_BOOTS 4000 1000"
+      - "ELYTRA 10000 2500"
+      - "TURTLE_HELMET 400 100"
+      - "SHIELD 120 30"
+  tools:
+    name: "&6Tools"
+    icon: DIAMOND_PICKAXE
+    slot: 21
+    items:
+      - "DIAMOND_PICKAXE 700 175"
+      - "DIAMOND_AXE 700 175"
+      - "DIAMOND_SHOVEL 300 75"
+      - "DIAMOND_HOE 400 100"
+      - "NETHERITE_PICKAXE 3500 875"
+      - "NETHERITE_AXE 3500 875"
+      - "FISHING_ROD 60 15"
+      - "SHEARS 40 10"
+      - "FLINT_AND_STEEL 30 8"
+      - "BUCKET 50 12"
+      - "WATER_BUCKET 60 15"
+      - "LAVA_BUCKET 80 20"
+  blocks:
+    name: "&aBlocks"
+    icon: GRASS_BLOCK
+    slot: 22
+    items:
+      - "COBBLESTONE 2 0.5"
+      - "STONE 3 1"
+      - "DIRT 1 0.25"
+      - "SAND 2 0.5"
+      - "OAK_LOG 6 1.5"
+      - "GLASS 4 1"
+      - "BRICKS 12 3"
+      - "QUARTZ_BLOCK 20 5"
+      - "OBSIDIAN 60 15"
+      - "NETHERRACK 2 0.5"
+      - "END_STONE 8 2"
+      - "TERRACOTTA 10 2"
+      - "HAY_BLOCK 30 8"
+  ores:
+    name: "&eOres"
+    icon: DIAMOND
+    slot: 23
+    items:
+      - "COAL 10 3"
+      - "IRON_INGOT 30 8"
+      - "GOLD_INGOT 50 12"
+      - "COPPER_INGOT 15 4"
+      - "REDSTONE 8 2"
+      - "LAPIS_LAZULI 12 3"
+      - "DIAMOND 200 50"
+      - "EMERALD 160 40"
+      - "QUARTZ 8 2"
+      - "ANCIENT_DEBRIS 1200 300"
+      - "NETHERITE_INGOT 3000 750"
+  food:
+    name: "&dFood"
+    icon: COOKED_BEEF
+    slot: 24
+    items:
+      - "COOKED_BEEF 15 4"
+      - "COOKED_PORKCHOP 15 4"
+      - "COOKED_CHICKEN 12 3"
+      - "BREAD 10 2"
+      - "BAKED_POTATO 8 2"
+      - "GOLDEN_CARROT 25 6"
+      - "APPLE 6 1"
+      - "PUMPKIN_PIE 12 3"
+  farming:
+    name: "&2Farming"
+    icon: WHEAT
+    slot: 25
+    items:
+      - "WHEAT 4 1"
+      - "WHEAT_SEEDS 2 0.5"
+      - "CARROT 4 1"
+      - "POTATO 4 1"
+      - "BEETROOT 4 1"
+      - "SUGAR_CANE 4 1"
+      - "PUMPKIN 6 1.5"
+      - "MELON_SLICE 2 0.5"
+      - "BONE_MEAL 5 1"
+  redstone:
+    name: "&4Redstone"
+    icon: REDSTONE
+    slot: 30
+    items:
+      - "REDSTONE 8 2"
+      - "REPEATER 20 5"
+      - "COMPARATOR 40 10"
+      - "PISTON 30 8"
+      - "STICKY_PISTON 45 11"
+      - "OBSERVER 40 10"
+      - "HOPPER 50 12"
+      - "DISPENSER 40 10"
+      - "DROPPER 35 9"
+      - "LEVER 5 1"
+      - "REDSTONE_TORCH 10 2"
+  mobdrops:
+    name: "&5Mob Drops"
+    icon: ENDER_PEARL
+    slot: 31
+    items:
+      - "BONE 6 1.5"
+      - "STRING 5 1"
+      - "GUNPOWDER 12 3"
+      - "ROTTEN_FLESH 2 0.5"
+      - "SPIDER_EYE 6 1.5"
+      - "SLIME_BALL 10 2.5"
+      - "ENDER_PEARL 50 10"
+      - "BLAZE_ROD 40 10"
+      - "GHAST_TEAR 100 25"
+      - "PHANTOM_MEMBRANE 25 6"
+  misc:
+    name: "&9Misc"
+    icon: ENDER_CHEST
+    slot: 32
+    items:
+      - "EXPERIENCE_BOTTLE 40 10"
+      - "NAME_TAG 100 25"
+      - "SADDLE 200 50"
+      - "ENDER_CHEST 300 75"
+      - "SHULKER_BOX 1500 375"
+      - "ANVIL 150 40"
+      - "ENCHANTING_TABLE 500 125"
+      - "BEACON 10000 2500"
+      - "NETHER_STAR 5000 1250"
