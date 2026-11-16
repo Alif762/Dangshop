@@ -27,7 +27,7 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
     private static final int MAX_ITEMS = 45;
 
     private static class Holder implements InventoryHolder {
-        final String section; // null = menu utama
+        final String section; // null = main menu
 
         Holder(String section) {
             this.section = section;
@@ -77,7 +77,7 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
         return color(getConfig().getString("messages." + key, def));
     }
 
-    // ---------- Muat config ----------
+    // ---------- Load config ----------
     private void loadShops() {
         shops.clear();
         names.clear();
@@ -100,18 +100,18 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
             for (String line : s.getStringList("items")) {
                 String[] parts = line.trim().split("\\s+");
                 if (parts.length < 3) {
-                    getLogger().warning("Baris tak sah dalam " + id + ": " + line);
+                    getLogger().warning("Invalid line in " + id + ": " + line);
                     continue;
                 }
                 Material m = Material.matchMaterial(parts[0]);
                 if (m == null || !m.isItem()) {
-                    getLogger().warning("Item tak dikenali dalam " + id + ": " + parts[0]);
+                    getLogger().warning("Unknown item in " + id + ": " + parts[0]);
                     continue;
                 }
                 try {
                     list.add(new ShopItem(m, Double.parseDouble(parts[1]), Double.parseDouble(parts[2])));
                 } catch (NumberFormatException ex) {
-                    getLogger().warning("Harga tak sah dalam " + id + ": " + line);
+                    getLogger().warning("Invalid price in " + id + ": " + line);
                 }
             }
             shops.put(id, list);
@@ -125,11 +125,11 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
             if (!sender.hasPermission("dangshop.reload")) return true;
             reloadConfig();
             loadShops();
-            sender.sendMessage(msg("reloaded", "&aConfig dimuat semula."));
+            sender.sendMessage(msg("reloaded", "&aConfig reloaded."));
             return true;
         }
         if (!(sender instanceof Player p)) {
-            sender.sendMessage("Hanya pemain boleh guna command ini.");
+            sender.sendMessage("Only players can use this command.");
             return true;
         }
         if (!p.hasPermission("dangshop.use")) return true;
@@ -163,8 +163,8 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
             ItemMeta m = it.getItemMeta();
             m.setDisplayName(names.get(id));
             m.setLore(List.of(
-                    color("&7" + shops.get(id).size() + " item"),
-                    color("&eKlik untuk buka")));
+                    color("&7" + shops.get(id).size() + " items"),
+                    color("&eClick to open")));
             m.addItemFlags(ItemFlag.values());
             it.setItemMeta(m);
             inv.setItem(slot, it);
@@ -185,7 +185,7 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
 
         ItemStack back = new ItemStack(Material.ARROW);
         ItemMeta bm = back.getItemMeta();
-        bm.setDisplayName(color("&cKembali"));
+        bm.setDisplayName(color("&cBack"));
         back.setItemMeta(bm);
         inv.setItem(BACK_SLOT, back);
 
@@ -197,11 +197,11 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
         ItemMeta m = it.getItemMeta();
         List<String> lore = new ArrayList<>();
         lore.add("");
-        if (si.buy > 0) lore.add(color("&aBeli: &f$" + money(si.buy)));
-        if (si.sell > 0) lore.add(color("&cJual: &f$" + money(si.sell)));
+        if (si.buy > 0) lore.add(color("&aBuy: &f$" + money(si.buy)));
+        if (si.sell > 0) lore.add(color("&cSell: &f$" + money(si.sell)));
         lore.add("");
-        lore.add(color("&7Klik kiri: beli 1  |  Shift+kiri: beli 64"));
-        lore.add(color("&7Klik kanan: jual 1  |  Shift+kanan: jual semua"));
+        lore.add(color("&7Left click: buy 1  |  Shift+left: buy 64"));
+        lore.add(color("&7Right click: sell 1  |  Shift+right: sell all"));
         m.setLore(lore);
         m.addItemFlags(ItemFlag.values());
         it.setItemMeta(m);
@@ -218,7 +218,7 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
 
         int slot = e.getSlot();
 
-        // Menu utama: klik section
+        // Main menu: click a section
         if (h.section == null) {
             for (Map.Entry<String, Integer> s : slots.entrySet()) {
                 if (s.getValue() == slot && shops.containsKey(s.getKey())) {
@@ -230,7 +230,7 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
             return;
         }
 
-        // Dalam section
+        // Inside a section
         if (slot == BACK_SLOT) {
             Bukkit.getScheduler().runTask(this, () -> openMain(p));
             return;
@@ -252,18 +252,18 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
         if (e.getView().getTopInventory().getHolder() instanceof Holder) e.setCancelled(true);
     }
 
-    // ---------- Beli ----------
+    // ---------- Buy ----------
     private void buy(Player p, ShopItem si, int amount) {
         if (si.buy <= 0) {
-            p.sendMessage(msg("cant-buy", "&cItem ni tak boleh dibeli."));
+            p.sendMessage(msg("cant-buy", "&cThis item can't be bought."));
             return;
         }
         if (!hookEconomy()) {
-            p.sendMessage(msg("no-economy", "&cSistem duit (Vault) tak jumpa."));
+            p.sendMessage(msg("no-economy", "&cEconomy system (Vault) not found."));
             return;
         }
         if (balance(p) < si.buy * amount) {
-            p.sendMessage(msg("no-money", "&cDuit tak cukup."));
+            p.sendMessage(msg("no-money", "&cYou don't have enough money."));
             return;
         }
 
@@ -279,26 +279,26 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
 
         int given = amount - notFit;
         if (given <= 0) {
-            p.sendMessage(msg("inv-full", "&cInventori penuh."));
+            p.sendMessage(msg("inv-full", "&cYour inventory is full."));
             return;
         }
 
         double cost = si.buy * given;
         take(p, cost);
-        p.sendMessage(msg("bought", "&aBeli &f%amount%x %item% &auntuk &f$%price%")
+        p.sendMessage(msg("bought", "&aBought &f%amount%x %item% &afor &f$%price%")
                 .replace("%amount%", String.valueOf(given))
                 .replace("%item%", niceName(si.mat))
                 .replace("%price%", money(cost)));
     }
 
-    // ---------- Jual (amount -1 = semua) ----------
+    // ---------- Sell (amount -1 = all) ----------
     private void sell(Player p, ShopItem si, int amount) {
         if (si.sell <= 0) {
-            p.sendMessage(msg("cant-sell", "&cItem ni tak boleh dijual."));
+            p.sendMessage(msg("cant-sell", "&cThis item can't be sold."));
             return;
         }
         if (!hookEconomy()) {
-            p.sendMessage(msg("no-economy", "&cSistem duit (Vault) tak jumpa."));
+            p.sendMessage(msg("no-economy", "&cEconomy system (Vault) not found."));
             return;
         }
 
@@ -310,7 +310,7 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
             if (it != null && it.isSimilar(ref)) have += it.getAmount();
         }
         if (have <= 0) {
-            p.sendMessage(msg("no-items", "&cAwak tiada item tu."));
+            p.sendMessage(msg("no-items", "&cYou don't have that item."));
             return;
         }
 
@@ -331,13 +331,13 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
 
         double gain = si.sell * n;
         give(p, gain);
-        p.sendMessage(msg("sold", "&aJual &f%amount%x %item% &auntuk &f$%price%")
+        p.sendMessage(msg("sold", "&aSold &f%amount%x %item% &afor &f$%price%")
                 .replace("%amount%", String.valueOf(n))
                 .replace("%item%", niceName(si.mat))
                 .replace("%price%", money(gain)));
     }
 
-    // ---------- Duit (Vault) ----------
+    // ---------- Money (Vault) ----------
     @SuppressWarnings({"unchecked", "rawtypes"})
     private boolean hookEconomy() {
         if (eco != null) return true;
@@ -367,7 +367,7 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
         try {
             withdraw.invoke(eco, p, amount);
         } catch (Throwable t) {
-            getLogger().warning("Gagal ambil duit: " + t.getMessage());
+            getLogger().warning("Failed to withdraw money: " + t.getMessage());
         }
     }
 
@@ -375,11 +375,11 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
         try {
             deposit.invoke(eco, p, amount);
         } catch (Throwable t) {
-            getLogger().warning("Gagal masukkan duit: " + t.getMessage());
+            getLogger().warning("Failed to deposit money: " + t.getMessage());
         }
     }
 
-    // ---------- Util ----------
+    // ---------- Utilities ----------
     private String money(double v) {
         return String.format(Locale.US, "%,.2f", v);
     }
@@ -393,4 +393,4 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
         }
         return sb.toString();
     }
-  }
+            }
