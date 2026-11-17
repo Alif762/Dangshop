@@ -1,15 +1,23 @@
 name: DangShop
-version: 1.0.0
-main: my.dangshop.DangShop
+version: 1.1.0
+main: my.dangshop.DangShopPlus
 api-version: "1.20"
 softdepend: [Vault, Essentials]
 commands:
   dshop:
-    description: Buka DangShop
+    description: Open DangShop
     usage: /dshop [section]
     aliases: [dangshop]
+  sells:
+    description: Sell items from your inventory
+    usage: /sells
 permissions:
   dangshop.use:
     default: true
+  dangshop.sell:
+    default: true
   dangshop.reload:
+    default: op
+  dangshop.admin:
+    description: Add and edit sections and prices
     default: op
