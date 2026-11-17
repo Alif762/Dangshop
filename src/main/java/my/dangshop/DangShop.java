@@ -20,7 +20,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.lang.reflect.Method;
 import java.util.*;
 
-public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
+public class DangShop extends JavaPlugin implements Listener, CommandExecutor, TabCompleter {
 
     private static final int SIZE = 54;
     private static final int BACK_SLOT = 49;
@@ -66,7 +66,10 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
         saveDefaultConfig();
         loadShops();
         Bukkit.getPluginManager().registerEvents(this, this);
-        if (getCommand("dshop") != null) getCommand("dshop").setExecutor(this);
+        if (getCommand("dshop") != null) {
+            getCommand("dshop").setExecutor(this);
+            getCommand("dshop").setTabCompleter(this);
+        }
     }
 
     private String color(String s) {
@@ -119,15 +122,26 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
     }
 
     // ---------- Command ----------
+    private static final List<String> ADMIN_SUBS = List.of(
+            "addsection", "removesection", "additem", "setprice", "removeitem", "list", "help");
+
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
-        if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
-            if (!sender.hasPermission("dangshop.reload")) return true;
-            reloadConfig();
-            loadShops();
-            sender.sendMessage(msg("reloaded", "&aConfig reloaded."));
-            return true;
+        if (args.length > 0) {
+            String sub = args[0].toLowerCase();
+
+            if (sub.equals("reload")) {
+                if (!sender.hasPermission("dangshop.reload")) return true;
+                reloadConfig();
+                loadShops();
+                sender.sendMessage(msg("reloaded", "&aConfig reloaded."));
+                return true;
+            }
+            if (ADMIN_SUBS.contains(sub)) {
+                return admin(sender, sub, args);
+            }
         }
+
         if (!(sender instanceof Player p)) {
             sender.sendMessage("Only players can use this command.");
             return true;
@@ -140,6 +154,286 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
         }
         openMain(p);
         return true;
+    }
+
+    // ---------- Admin commands ----------
+    private boolean admin(CommandSender s, String sub, String[] a) {
+        if (!s.hasPermission("dangshop.admin")) {
+            s.sendMessage(color("&cYou don't have permission."));
+            return true;
+        }
+
+        switch (sub) {
+            case "help" -> help(s);
+            case "list" -> listCmd(s, a);
+            case "addsection" -> addSection(s, a);
+            case "removesection" -> removeSection(s, a);
+            case "additem" -> addItem(s, a);
+            case "setprice" -> setPrice(s, a);
+            case "removeitem" -> removeItem(s, a);
+            default -> help(s);
+        }
+        return true;
+    }
+
+    private void help(CommandSender s) {
+        s.sendMessage(color("&8--- &6DangShop Admin &8---"));
+        s.sendMessage(color("&e/dshop list [section] &7- show sections or items"));
+        s.sendMessage(color("&e/dshop addsection <id> <ICON> <slot> <name> &7- new section"));
+        s.sendMessage(color("&e/dshop removesection <id> &7- delete a section"));
+        s.sendMessage(color("&e/dshop additem <section> <MATERIAL|hand> <buy> <sell> &7- add item"));
+        s.sendMessage(color("&e/dshop setprice <section> <MATERIAL|hand> <buy> <sell> &7- change price"));
+        s.sendMessage(color("&e/dshop removeitem <section> <MATERIAL|hand> &7- remove item"));
+        s.sendMessage(color("&7Use 0 as a price to disable buying or selling."));
+    }
+
+    private void listCmd(CommandSender s, String[] a) {
+        if (a.length < 2) {
+            s.sendMessage(color("&8--- &6Sections &8---"));
+            for (String id : shops.keySet()) {
+                s.sendMessage(color("&e" + id + " &7- " + names.get(id) + " &7(slot "
+                        + slots.get(id) + ", " + shops.get(id).size() + " items)"));
+            }
+            return;
+        }
+        String id = a[1].toLowerCase();
+        List<ShopItem> list = shops.get(id);
+        if (list == null) {
+            s.sendMessage(color("&cSection not found: " + id));
+            return;
+        }
+        s.sendMessage(color("&8--- &6" + id + " &8---"));
+        for (ShopItem si : list) {
+            s.sendMessage(color("&e" + si.mat.name() + " &7buy &a" + num(si.buy)
+                    + " &7sell &c" + num(si.sell)));
+        }
+    }
+
+    private void addSection(CommandSender s, String[] a) {
+        if (a.length < 4) {
+            s.sendMessage(color("&eUsage: /dshop addsection <id> <ICON> <slot> <name>"));
+            return;
+        }
+        String id = a[1].toLowerCase();
+        if (shops.containsKey(id)) {
+            s.sendMessage(color("&cSection already exists: " + id));
+            return;
+        }
+        Material icon = Material.matchMaterial(a[2]);
+        if (icon == null || !icon.isItem()) {
+            s.sendMessage(color("&cUnknown icon material: " + a[2]));
+            return;
+        }
+        int slot;
+        try {
+            slot = Integer.parseInt(a[3]);
+        } catch (NumberFormatException e) {
+            s.sendMessage(color("&cSlot must be a number from 0 to 53."));
+            return;
+        }
+        if (slot < 0 || slot >= SIZE) {
+            s.sendMessage(color("&cSlot must be from 0 to 53."));
+            return;
+        }
+        if (slots.containsValue(slot)) {
+            s.sendMessage(color("&cThat slot is already used by another section."));
+            return;
+        }
+
+        String name = a.length > 4 ? String.join(" ", Arrays.copyOfRange(a, 4, a.length)) : id;
+        getConfig().set("sections." + id + ".name", name);
+        getConfig().set("sections." + id + ".icon", icon.name());
+        getConfig().set("sections." + id + ".slot", slot);
+        getConfig().set("sections." + id + ".items", new ArrayList<String>());
+        saveConfig();
+        loadShops();
+        s.sendMessage(color("&aSection &f" + id + " &acreated. Add items with /dshop additem " + id
+                + " <MATERIAL> <buy> <sell>"));
+    }
+
+    private void removeSection(CommandSender s, String[] a) {
+        if (a.length < 2) {
+            s.sendMessage(color("&eUsage: /dshop removesection <id>"));
+            return;
+        }
+        String id = a[1].toLowerCase();
+        if (!shops.containsKey(id)) {
+            s.sendMessage(color("&cSection not found: " + id));
+            return;
+        }
+        getConfig().set("sections." + id, null);
+        saveConfig();
+        loadShops();
+        s.sendMessage(color("&aSection &f" + id + " &aremoved."));
+    }
+
+    private void addItem(CommandSender s, String[] a) {
+        if (a.length < 5) {
+            s.sendMessage(color("&eUsage: /dshop additem <section> <MATERIAL|hand> <buy> <sell>"));
+            return;
+        }
+        String id = a[1].toLowerCase();
+        if (!shops.containsKey(id)) {
+            s.sendMessage(color("&cSection not found: " + id));
+            return;
+        }
+        Material m = resolveMaterial(s, a[2]);
+        if (m == null) return;
+        double[] prices = parsePrices(s, a[3], a[4]);
+        if (prices == null) return;
+
+        List<String> lines = new ArrayList<>(getConfig().getStringList("sections." + id + ".items"));
+        if (findLine(lines, m) >= 0) {
+            s.sendMessage(color("&cThat item is already in " + id + ". Use /dshop setprice instead."));
+            return;
+        }
+        if (lines.size() >= MAX_ITEMS) {
+            s.sendMessage(color("&cThis section is full (" + MAX_ITEMS + " items)."));
+            return;
+        }
+        lines.add(m.name() + " " + num(prices[0]) + " " + num(prices[1]));
+        getConfig().set("sections." + id + ".items", lines);
+        saveConfig();
+        loadShops();
+        s.sendMessage(color("&aAdded &f" + m.name() + " &ato &f" + id + " &7(buy "
+                + num(prices[0]) + ", sell " + num(prices[1]) + ")"));
+    }
+
+    private void setPrice(CommandSender s, String[] a) {
+        if (a.length < 5) {
+            s.sendMessage(color("&eUsage: /dshop setprice <section> <MATERIAL|hand> <buy> <sell>"));
+            return;
+        }
+        String id = a[1].toLowerCase();
+        if (!shops.containsKey(id)) {
+            s.sendMessage(color("&cSection not found: " + id));
+            return;
+        }
+        Material m = resolveMaterial(s, a[2]);
+        if (m == null) return;
+        double[] prices = parsePrices(s, a[3], a[4]);
+        if (prices == null) return;
+
+        List<String> lines = new ArrayList<>(getConfig().getStringList("sections." + id + ".items"));
+        int idx = findLine(lines, m);
+        if (idx < 0) {
+            s.sendMessage(color("&cThat item is not in " + id + ". Use /dshop additem first."));
+            return;
+        }
+        lines.set(idx, m.name() + " " + num(prices[0]) + " " + num(prices[1]));
+        getConfig().set("sections." + id + ".items", lines);
+        saveConfig();
+        loadShops();
+        s.sendMessage(color("&aUpdated &f" + m.name() + " &7(buy " + num(prices[0])
+                + ", sell " + num(prices[1]) + ")"));
+    }
+
+    private void removeItem(CommandSender s, String[] a) {
+        if (a.length < 3) {
+            s.sendMessage(color("&eUsage: /dshop removeitem <section> <MATERIAL|hand>"));
+            return;
+        }
+        String id = a[1].toLowerCase();
+        if (!shops.containsKey(id)) {
+            s.sendMessage(color("&cSection not found: " + id));
+            return;
+        }
+        Material m = resolveMaterial(s, a[2]);
+        if (m == null) return;
+
+        List<String> lines = new ArrayList<>(getConfig().getStringList("sections." + id + ".items"));
+        int idx = findLine(lines, m);
+        if (idx < 0) {
+            s.sendMessage(color("&cThat item is not in " + id + "."));
+            return;
+        }
+        lines.remove(idx);
+        getConfig().set("sections." + id + ".items", lines);
+        saveConfig();
+        loadShops();
+        s.sendMessage(color("&aRemoved &f" + m.name() + " &afrom &f" + id + "&a."));
+    }
+
+    private Material resolveMaterial(CommandSender s, String input) {
+        Material m;
+        if (input.equalsIgnoreCase("hand")) {
+            if (!(s instanceof Player p)) {
+                s.sendMessage(color("&cOnly players can use 'hand'."));
+                return null;
+            }
+            m = p.getInventory().getItemInMainHand().getType();
+            if (m == Material.AIR) {
+                s.sendMessage(color("&cYou aren't holding anything."));
+                return null;
+            }
+        } else {
+            m = Material.matchMaterial(input);
+        }
+        if (m == null || !m.isItem() || m == Material.AIR) {
+            s.sendMessage(color("&cUnknown item: " + input));
+            return null;
+        }
+        return m;
+    }
+
+    private double[] parsePrices(CommandSender s, String buy, String sell) {
+        try {
+            double b = Double.parseDouble(buy);
+            double c = Double.parseDouble(sell);
+            if (b < 0 || c < 0) {
+                s.sendMessage(color("&cPrices can't be negative. Use 0 to disable."));
+                return null;
+            }
+            return new double[]{b, c};
+        } catch (NumberFormatException e) {
+            s.sendMessage(color("&cPrices must be numbers."));
+            return null;
+        }
+    }
+
+    private int findLine(List<String> lines, Material m) {
+        for (int i = 0; i < lines.size(); i++) {
+            String[] parts = lines.get(i).trim().split("\\s+");
+            if (parts.length > 0 && parts[0].equalsIgnoreCase(m.name())) return i;
+        }
+        return -1;
+    }
+
+    private String num(double v) {
+        if (v == Math.rint(v)) return String.valueOf((long) v);
+        return String.valueOf(v);
+    }
+
+    // ---------- Tab complete ----------
+    @Override
+    public List<String> onTabComplete(CommandSender s, Command c, String l, String[] a) {
+        List<String> out = new ArrayList<>();
+        boolean admin = s.hasPermission("dangshop.admin");
+
+        if (a.length == 1) {
+            out.addAll(shops.keySet());
+            if (admin) {
+                out.addAll(ADMIN_SUBS);
+                out.add("reload");
+            }
+            return filter(out, a[0]);
+        }
+        if (a.length == 2 && admin) {
+            String sub = a[0].toLowerCase();
+            if (List.of("removesection", "additem", "setprice", "removeitem", "list").contains(sub)) {
+                out.addAll(shops.keySet());
+                return filter(out, a[1]);
+            }
+        }
+        return out;
+    }
+
+    private List<String> filter(List<String> in, String prefix) {
+        List<String> out = new ArrayList<>();
+        for (String x : in) {
+            if (x.toLowerCase().startsWith(prefix.toLowerCase())) out.add(x);
+        }
+        return out;
     }
 
     // ---------- GUI ----------
@@ -252,145 +546,4 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor {
         if (e.getView().getTopInventory().getHolder() instanceof Holder) e.setCancelled(true);
     }
 
-    // ---------- Buy ----------
-    private void buy(Player p, ShopItem si, int amount) {
-        if (si.buy <= 0) {
-            p.sendMessage(msg("cant-buy", "&cThis item can't be bought."));
-            return;
-        }
-        if (!hookEconomy()) {
-            p.sendMessage(msg("no-economy", "&cEconomy system (Vault) not found."));
-            return;
-        }
-        if (balance(p) < si.buy * amount) {
-            p.sendMessage(msg("no-money", "&cYou don't have enough money."));
-            return;
-        }
-
-        int max = si.mat.getMaxStackSize();
-        int left = amount;
-        int notFit = 0;
-        while (left > 0) {
-            int n = Math.min(left, max);
-            Map<Integer, ItemStack> rest = p.getInventory().addItem(new ItemStack(si.mat, n));
-            for (ItemStack r : rest.values()) notFit += r.getAmount();
-            left -= n;
-        }
-
-        int given = amount - notFit;
-        if (given <= 0) {
-            p.sendMessage(msg("inv-full", "&cYour inventory is full."));
-            return;
-        }
-
-        double cost = si.buy * given;
-        take(p, cost);
-        p.sendMessage(msg("bought", "&aBought &f%amount%x %item% &afor &f$%price%")
-                .replace("%amount%", String.valueOf(given))
-                .replace("%item%", niceName(si.mat))
-                .replace("%price%", money(cost)));
-    }
-
-    // ---------- Sell (amount -1 = all) ----------
-    private void sell(Player p, ShopItem si, int amount) {
-        if (si.sell <= 0) {
-            p.sendMessage(msg("cant-sell", "&cThis item can't be sold."));
-            return;
-        }
-        if (!hookEconomy()) {
-            p.sendMessage(msg("no-economy", "&cEconomy system (Vault) not found."));
-            return;
-        }
-
-        ItemStack ref = new ItemStack(si.mat);
-        ItemStack[] contents = p.getInventory().getStorageContents();
-
-        int have = 0;
-        for (ItemStack it : contents) {
-            if (it != null && it.isSimilar(ref)) have += it.getAmount();
-        }
-        if (have <= 0) {
-            p.sendMessage(msg("no-items", "&cYou don't have that item."));
-            return;
-        }
-
-        int n = amount < 0 ? have : Math.min(amount, have);
-        int remaining = n;
-        for (int i = 0; i < contents.length && remaining > 0; i++) {
-            ItemStack it = contents[i];
-            if (it == null || !it.isSimilar(ref)) continue;
-            int takeAmt = Math.min(remaining, it.getAmount());
-            if (takeAmt >= it.getAmount()) {
-                contents[i] = null;
-            } else {
-                it.setAmount(it.getAmount() - takeAmt);
-            }
-            remaining -= takeAmt;
-        }
-        p.getInventory().setStorageContents(contents);
-
-        double gain = si.sell * n;
-        give(p, gain);
-        p.sendMessage(msg("sold", "&aSold &f%amount%x %item% &afor &f$%price%")
-                .replace("%amount%", String.valueOf(n))
-                .replace("%item%", niceName(si.mat))
-                .replace("%price%", money(gain)));
-    }
-
-    // ---------- Money (Vault) ----------
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private boolean hookEconomy() {
-        if (eco != null) return true;
-        try {
-            Class c = Class.forName("net.milkbowl.vault.economy.Economy");
-            RegisteredServiceProvider rsp = Bukkit.getServicesManager().getRegistration(c);
-            if (rsp == null) return false;
-            eco = rsp.getProvider();
-            getBalance = c.getMethod("getBalance", OfflinePlayer.class);
-            withdraw = c.getMethod("withdrawPlayer", OfflinePlayer.class, double.class);
-            deposit = c.getMethod("depositPlayer", OfflinePlayer.class, double.class);
-            return true;
-        } catch (Throwable t) {
-            return false;
-        }
-    }
-
-    private double balance(Player p) {
-        try {
-            return ((Number) getBalance.invoke(eco, p)).doubleValue();
-        } catch (Throwable t) {
-            return 0;
-        }
-    }
-
-    private void take(Player p, double amount) {
-        try {
-            withdraw.invoke(eco, p, amount);
-        } catch (Throwable t) {
-            getLogger().warning("Failed to withdraw money: " + t.getMessage());
-        }
-    }
-
-    private void give(Player p, double amount) {
-        try {
-            deposit.invoke(eco, p, amount);
-        } catch (Throwable t) {
-            getLogger().warning("Failed to deposit money: " + t.getMessage());
-        }
-    }
-
-    // ---------- Utilities ----------
-    private String money(double v) {
-        return String.format(Locale.US, "%,.2f", v);
-    }
-
-    private String niceName(Material m) {
-        StringBuilder sb = new StringBuilder();
-        for (String w : m.name().toLowerCase().split("_")) {
-            if (w.isEmpty()) continue;
-            if (sb.length() > 0) sb.append(' ');
-            sb.append(Character.toUpperCase(w.charAt(0))).append(w.substring(1));
-        }
-        return sb.toString();
-    }
-            }
+    // ---------- Buy ---------
