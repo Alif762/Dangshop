@@ -545,5 +545,146 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
     public void onDrag(InventoryDragEvent e) {
         if (e.getView().getTopInventory().getHolder() instanceof Holder) e.setCancelled(true);
     }
+    
+    // ---------- Buy ----------
+    private void buy(Player p, ShopItem si, int amount) {
+        if (si.buy <= 0) {
+            p.sendMessage(msg("cant-buy", "&cThis item can't be bought."));
+            return;
+        }
+        if (!hookEconomy()) {
+            p.sendMessage(msg("no-economy", "&cEconomy system (Vault) not found."));
+            return;
+        }
+        if (balance(p) < si.buy * amount) {
+            p.sendMessage(msg("no-money", "&cYou don't have enough money."));
+            return;
+        }
 
-    // ---------- Buy ---------
+        int max = si.mat.getMaxStackSize();
+        int left = amount;
+        int notFit = 0;
+        while (left > 0) {
+            int n = Math.min(left, max);
+            Map<Integer, ItemStack> rest = p.getInventory().addItem(new ItemStack(si.mat, n));
+            for (ItemStack r : rest.values()) notFit += r.getAmount();
+            left -= n;
+        }
+
+        int given = amount - notFit;
+        if (given <= 0) {
+            p.sendMessage(msg("inv-full", "&cYour inventory is full."));
+            return;
+        }
+
+        double cost = si.buy * given;
+        take(p, cost);
+        p.sendMessage(msg("bought", "&aBought &f%amount%x %item% &afor &f$%price%")
+                .replace("%amount%", String.valueOf(given))
+                .replace("%item%", niceName(si.mat))
+                .replace("%price%", money(cost)));
+    }
+
+    // ---------- Sell (amount -1 = all) ----------
+    private void sell(Player p, ShopItem si, int amount) {
+        if (si.sell <= 0) {
+            p.sendMessage(msg("cant-sell", "&cThis item can't be sold."));
+            return;
+        }
+        if (!hookEconomy()) {
+            p.sendMessage(msg("no-economy", "&cEconomy system (Vault) not found."));
+            return;
+        }
+
+        ItemStack ref = new ItemStack(si.mat);
+        ItemStack[] contents = p.getInventory().getStorageContents();
+
+        int have = 0;
+        for (ItemStack it : contents) {
+            if (it != null && it.isSimilar(ref)) have += it.getAmount();
+        }
+        if (have <= 0) {
+            p.sendMessage(msg("no-items", "&cYou don't have that item."));
+            return;
+        }
+
+        int n = amount < 0 ? have : Math.min(amount, have);
+        int remaining = n;
+        for (int i = 0; i < contents.length && remaining > 0; i++) {
+            ItemStack it = contents[i];
+            if (it == null || !it.isSimilar(ref)) continue;
+            int takeAmt = Math.min(remaining, it.getAmount());
+            if (takeAmt >= it.getAmount()) {
+                contents[i] = null;
+            } else {
+                it.setAmount(it.getAmount() - takeAmt);
+            }
+            remaining -= takeAmt;
+        }
+        p.getInventory().setStorageContents(contents);
+
+        double gain = si.sell * n;
+        give(p, gain);
+        p.sendMessage(msg("sold", "&aSold &f%amount%x %item% &afor &f$%price%")
+                .replace("%amount%", String.valueOf(n))
+                .replace("%item%", niceName(si.mat))
+                .replace("%price%", money(gain)));
+    }
+
+    // ---------- Money (Vault) ----------
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private boolean hookEconomy() {
+        if (eco != null) return true;
+        try {
+            Class c = Class.forName("net.milkbowl.vault.economy.Economy");
+            RegisteredServiceProvider rsp = Bukkit.getServicesManager().getRegistration(c);
+            if (rsp == null) return false;
+            eco = rsp.getProvider();
+            getBalance = c.getMethod("getBalance", OfflinePlayer.class);
+            withdraw = c.getMethod("withdrawPlayer", OfflinePlayer.class, double.class);
+            deposit = c.getMethod("depositPlayer", OfflinePlayer.class, double.class);
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private double balance(Player p) {
+        try {
+            return ((Number) getBalance.invoke(eco, p)).doubleValue();
+        } catch (Throwable t) {
+            return 0;
+        }
+    }
+
+    private void take(Player p, double amount) {
+        try {
+            withdraw.invoke(eco, p, amount);
+        } catch (Throwable t) {
+            getLogger().warning("Failed to withdraw money: " + t.getMessage());
+        }
+    }
+
+    private void give(Player p, double amount) {
+        try {
+            deposit.invoke(eco, p, amount);
+        } catch (Throwable t) {
+            getLogger().warning("Failed to deposit money: " + t.getMessage());
+        }
+    }
+
+    // ---------- Utilities ----------
+    private String money(double v) {
+        return String.format(Locale.US, "%,.2f", v);
+    }
+
+    private String niceName(Material m) {
+        StringBuilder sb = new StringBuilder();
+        for (String w : m.name().toLowerCase().split("_")) {
+            if (w.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(Character.toUpperCase(w.charAt(0))).append(w.substring(1));
+        }
+        return sb.toString();
+    }
+                }
