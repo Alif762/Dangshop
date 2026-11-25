@@ -3,6 +3,7 @@ package my.dangshop;
 import org.bukkit.*;
 import org.bukkit.command.*;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -13,6 +14,8 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.Damageable;
+import org.bukkit.inventory.meta.EnchantmentStorageMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.RegisteredServiceProvider;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -40,12 +43,14 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
     }
 
     private static class ShopItem {
-        final Material mat;
+        final ItemStack stack;   // template item, amount 1
+        final boolean special;   // true = has enchants, name, lore, etc.
         final double buy;
         final double sell;
 
-        ShopItem(Material mat, double buy, double sell) {
-            this.mat = mat;
+        ShopItem(ItemStack stack, boolean special, double buy, double sell) {
+            this.stack = stack;
+            this.special = special;
             this.buy = buy;
             this.sell = sell;
         }
@@ -100,6 +105,8 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
             slots.put(id, s.getInt("slot", 10));
 
             List<ShopItem> list = new ArrayList<>();
+
+            // Normal items: "MATERIAL BUY SELL"
             for (String line : s.getStringList("items")) {
                 String[] parts = line.trim().split("\\s+");
                 if (parts.length < 3) {
@@ -112,13 +119,50 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
                     continue;
                 }
                 try {
-                    list.add(new ShopItem(m, Double.parseDouble(parts[1]), Double.parseDouble(parts[2])));
+                    list.add(new ShopItem(new ItemStack(m), false,
+                            Double.parseDouble(parts[1]), Double.parseDouble(parts[2])));
                 } catch (NumberFormatException ex) {
                     getLogger().warning("Invalid price in " + id + ": " + line);
                 }
             }
+
+            // Special items (enchanted, named, etc.): saved as full items
+            ConfigurationSection sp = s.getConfigurationSection("special");
+            if (sp != null) {
+                for (String key : sp.getKeys(false)) {
+                    ItemStack st = sp.getItemStack(key + ".item");
+                    if (st == null) {
+                        getLogger().warning("Could not read special item " + key + " in " + id);
+                        continue;
+                    }
+                    st = st.clone();
+                    st.setAmount(1);
+                    list.add(new ShopItem(st, true,
+                            sp.getDouble(key + ".buy"), sp.getDouble(key + ".sell")));
+                }
+            }
             shops.put(id, list);
         }
+    }
+
+    // Write a section's items back to config, then reload
+    private void persist(String id, List<ShopItem> list) {
+        List<String> lines = new ArrayList<>();
+        getConfig().set("sections." + id + ".special", null);
+        int n = 1;
+        for (ShopItem si : list) {
+            if (si.special) {
+                String base = "sections." + id + ".special." + n++;
+                getConfig().set(base + ".item", si.stack);
+                getConfig().set(base + ".buy", si.buy);
+                getConfig().set(base + ".sell", si.sell);
+            } else {
+                lines.add(si.stack.getType().name() + " " + num(si.buy) + " " + num(si.sell));
+            }
+        }
+        getConfig().set("sections." + id + ".items", lines);
+        saveConfig();
+        loadShops();
     }
 
     // ---------- Command ----------
@@ -184,6 +228,7 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
         s.sendMessage(color("&e/dshop additem <section> <MATERIAL|hand> <buy> <sell> &7- add item"));
         s.sendMessage(color("&e/dshop setprice <section> <MATERIAL|hand> <buy> <sell> &7- change price"));
         s.sendMessage(color("&e/dshop removeitem <section> <MATERIAL|hand> &7- remove item"));
+        s.sendMessage(color("&7Hold an enchanted or named item and use 'hand' to sell it exactly as it is."));
         s.sendMessage(color("&7Use 0 as a price to disable buying or selling."));
     }
 
@@ -204,7 +249,7 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
         }
         s.sendMessage(color("&8--- &6" + id + " &8---"));
         for (ShopItem si : list) {
-            s.sendMessage(color("&e" + si.mat.name() + " &7buy &a" + num(si.buy)
+            s.sendMessage(color("&e" + itemName(si) + " &7buy &a" + num(si.buy)
                     + " &7sell &c" + num(si.sell)));
         }
     }
@@ -277,25 +322,23 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
             s.sendMessage(color("&cSection not found: " + id));
             return;
         }
-        Material m = resolveMaterial(s, a[2]);
-        if (m == null) return;
         double[] prices = parsePrices(s, a[3], a[4]);
         if (prices == null) return;
+        ShopItem item = make(s, a[2], prices[0], prices[1]);
+        if (item == null) return;
 
-        List<String> lines = new ArrayList<>(getConfig().getStringList("sections." + id + ".items"));
-        if (findLine(lines, m) >= 0) {
+        List<ShopItem> list = new ArrayList<>(shops.get(id));
+        if (indexOf(list, item) >= 0) {
             s.sendMessage(color("&cThat item is already in " + id + ". Use /dshop setprice instead."));
             return;
         }
-        if (lines.size() >= MAX_ITEMS) {
+        if (list.size() >= MAX_ITEMS) {
             s.sendMessage(color("&cThis section is full (" + MAX_ITEMS + " items)."));
             return;
         }
-        lines.add(m.name() + " " + num(prices[0]) + " " + num(prices[1]));
-        getConfig().set("sections." + id + ".items", lines);
-        saveConfig();
-        loadShops();
-        s.sendMessage(color("&aAdded &f" + m.name() + " &ato &f" + id + " &7(buy "
+        list.add(item);
+        persist(id, list);
+        s.sendMessage(color("&aAdded &f" + itemName(item) + " &ato &f" + id + " &7(buy "
                 + num(prices[0]) + ", sell " + num(prices[1]) + ")"));
     }
 
@@ -309,22 +352,21 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
             s.sendMessage(color("&cSection not found: " + id));
             return;
         }
-        Material m = resolveMaterial(s, a[2]);
-        if (m == null) return;
         double[] prices = parsePrices(s, a[3], a[4]);
         if (prices == null) return;
+        ShopItem probe = make(s, a[2], prices[0], prices[1]);
+        if (probe == null) return;
 
-        List<String> lines = new ArrayList<>(getConfig().getStringList("sections." + id + ".items"));
-        int idx = findLine(lines, m);
+        List<ShopItem> list = new ArrayList<>(shops.get(id));
+        int idx = indexOf(list, probe);
         if (idx < 0) {
             s.sendMessage(color("&cThat item is not in " + id + ". Use /dshop additem first."));
             return;
         }
-        lines.set(idx, m.name() + " " + num(prices[0]) + " " + num(prices[1]));
-        getConfig().set("sections." + id + ".items", lines);
-        saveConfig();
-        loadShops();
-        s.sendMessage(color("&aUpdated &f" + m.name() + " &7(buy " + num(prices[0])
+        ShopItem old = list.get(idx);
+        list.set(idx, new ShopItem(old.stack, old.special, prices[0], prices[1]));
+        persist(id, list);
+        s.sendMessage(color("&aUpdated &f" + itemName(old) + " &7(buy " + num(prices[0])
                 + ", sell " + num(prices[1]) + ")"));
     }
 
@@ -338,42 +380,61 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
             s.sendMessage(color("&cSection not found: " + id));
             return;
         }
-        Material m = resolveMaterial(s, a[2]);
-        if (m == null) return;
+        ShopItem probe = make(s, a[2], 0, 0);
+        if (probe == null) return;
 
-        List<String> lines = new ArrayList<>(getConfig().getStringList("sections." + id + ".items"));
-        int idx = findLine(lines, m);
+        List<ShopItem> list = new ArrayList<>(shops.get(id));
+        int idx = indexOf(list, probe);
         if (idx < 0) {
             s.sendMessage(color("&cThat item is not in " + id + "."));
             return;
         }
-        lines.remove(idx);
-        getConfig().set("sections." + id + ".items", lines);
-        saveConfig();
-        loadShops();
-        s.sendMessage(color("&aRemoved &f" + m.name() + " &afrom &f" + id + "&a."));
+        ShopItem old = list.remove(idx);
+        persist(id, list);
+        s.sendMessage(color("&aRemoved &f" + itemName(old) + " &afrom &f" + id + "&a."));
     }
 
-    private Material resolveMaterial(CommandSender s, String input) {
-        Material m;
+    // Build a ShopItem from a material name or the item in the player's hand
+    private ShopItem make(CommandSender s, String input, double buy, double sell) {
         if (input.equalsIgnoreCase("hand")) {
             if (!(s instanceof Player p)) {
                 s.sendMessage(color("&cOnly players can use 'hand'."));
                 return null;
             }
-            m = p.getInventory().getItemInMainHand().getType();
-            if (m == Material.AIR) {
+            ItemStack h = p.getInventory().getItemInMainHand();
+            if (h == null || h.getType() == Material.AIR) {
                 s.sendMessage(color("&cYou aren't holding anything."));
                 return null;
             }
-        } else {
-            m = Material.matchMaterial(input);
+            ItemStack copy = h.clone();
+            copy.setAmount(1);
+            ItemMeta meta = copy.getItemMeta();
+            if (meta instanceof Damageable d && d.hasDamage()) {
+                d.setDamage(0);
+                copy.setItemMeta(meta);
+            }
+            boolean special = !copy.isSimilar(new ItemStack(copy.getType()));
+            return new ShopItem(copy, special, buy, sell);
         }
+
+        Material m = Material.matchMaterial(input);
         if (m == null || !m.isItem() || m == Material.AIR) {
             s.sendMessage(color("&cUnknown item: " + input));
             return null;
         }
-        return m;
+        return new ShopItem(new ItemStack(m), false, buy, sell);
+    }
+
+    private int indexOf(List<ShopItem> list, ShopItem item) {
+        for (int i = 0; i < list.size(); i++) {
+            ShopItem x = list.get(i);
+            if (x.special != item.special) continue;
+            if (item.special ? x.stack.isSimilar(item.stack)
+                    : x.stack.getType() == item.stack.getType()) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private double[] parsePrices(CommandSender s, String buy, String sell) {
@@ -391,17 +452,28 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
         }
     }
 
-    private int findLine(List<String> lines, Material m) {
-        for (int i = 0; i < lines.size(); i++) {
-            String[] parts = lines.get(i).trim().split("\\s+");
-            if (parts.length > 0 && parts[0].equalsIgnoreCase(m.name())) return i;
-        }
-        return -1;
-    }
-
     private String num(double v) {
         if (v == Math.rint(v)) return String.valueOf((long) v);
         return String.valueOf(v);
+    }
+
+    // Readable item name, including the enchantments of enchanted books
+    private String itemName(ShopItem si) {
+        ItemMeta m = si.stack.getItemMeta();
+        if (m != null && m.hasDisplayName()) return ChatColor.stripColor(m.getDisplayName());
+
+        String base = niceName(si.stack.getType().name());
+        if (m instanceof EnchantmentStorageMeta esm && esm.hasStoredEnchants()) {
+            StringBuilder sb = new StringBuilder(base).append(" (");
+            boolean first = true;
+            for (Map.Entry<Enchantment, Integer> e : esm.getStoredEnchants().entrySet()) {
+                if (!first) sb.append(", ");
+                sb.append(niceName(e.getKey().getKey().getKey())).append(' ').append(e.getValue());
+                first = false;
+            }
+            return sb.append(")").toString();
+        }
+        return si.special ? base + " (Special)" : base;
     }
 
     // ---------- Tab complete ----------
@@ -434,9 +506,8 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
             if (x.toLowerCase().startsWith(prefix.toLowerCase())) out.add(x);
         }
         return out;
-    }
-
-    // ---------- GUI ----------
+                                        }
+        // ---------- GUI ----------
     private void fill(Inventory inv, int from, int to) {
         ItemStack pane = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
         ItemMeta m = pane.getItemMeta();
@@ -486,10 +557,14 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
         p.openInventory(inv);
     }
 
+    // Shows the real item (with its enchants) plus the shop price lines
     private ItemStack display(ShopItem si) {
-        ItemStack it = new ItemStack(si.mat);
+        ItemStack it = si.stack.clone();
+        it.setAmount(1);
         ItemMeta m = it.getItemMeta();
+
         List<String> lore = new ArrayList<>();
+        if (m.hasLore() && m.getLore() != null) lore.addAll(m.getLore());
         lore.add("");
         if (si.buy > 0) lore.add(color("&aBuy: &f$" + money(si.buy)));
         if (si.sell > 0) lore.add(color("&cSell: &f$" + money(si.sell)));
@@ -497,7 +572,12 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
         lore.add(color("&7Left click: buy 1  |  Shift+left: buy 64"));
         lore.add(color("&7Right click: sell 1  |  Shift+right: sell all"));
         m.setLore(lore);
-        m.addItemFlags(ItemFlag.values());
+
+        if (!si.special) {
+            m.addItemFlags(ItemFlag.values());
+        } else {
+            m.addItemFlags(ItemFlag.HIDE_ATTRIBUTES);
+        }
         it.setItemMeta(m);
         return it;
     }
@@ -545,7 +625,7 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
     public void onDrag(InventoryDragEvent e) {
         if (e.getView().getTopInventory().getHolder() instanceof Holder) e.setCancelled(true);
     }
-    
+
     // ---------- Buy ----------
     private void buy(Player p, ShopItem si, int amount) {
         if (si.buy <= 0) {
@@ -561,12 +641,14 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
             return;
         }
 
-        int max = si.mat.getMaxStackSize();
+        int max = si.stack.getMaxStackSize();
         int left = amount;
         int notFit = 0;
         while (left > 0) {
             int n = Math.min(left, max);
-            Map<Integer, ItemStack> rest = p.getInventory().addItem(new ItemStack(si.mat, n));
+            ItemStack give = si.stack.clone();
+            give.setAmount(n);
+            Map<Integer, ItemStack> rest = p.getInventory().addItem(give);
             for (ItemStack r : rest.values()) notFit += r.getAmount();
             left -= n;
         }
@@ -581,7 +663,7 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
         take(p, cost);
         p.sendMessage(msg("bought", "&aBought &f%amount%x %item% &afor &f$%price%")
                 .replace("%amount%", String.valueOf(given))
-                .replace("%item%", niceName(si.mat))
+                .replace("%item%", itemName(si))
                 .replace("%price%", money(cost)));
     }
 
@@ -596,7 +678,7 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
             return;
         }
 
-        ItemStack ref = new ItemStack(si.mat);
+        ItemStack ref = si.stack;
         ItemStack[] contents = p.getInventory().getStorageContents();
 
         int have = 0;
@@ -627,7 +709,7 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
         give(p, gain);
         p.sendMessage(msg("sold", "&aSold &f%amount%x %item% &afor &f$%price%")
                 .replace("%amount%", String.valueOf(n))
-                .replace("%item%", niceName(si.mat))
+                .replace("%item%", itemName(si))
                 .replace("%price%", money(gain)));
     }
 
@@ -678,13 +760,13 @@ public class DangShop extends JavaPlugin implements Listener, CommandExecutor, T
         return String.format(Locale.US, "%,.2f", v);
     }
 
-    private String niceName(Material m) {
+    private String niceName(String raw) {
         StringBuilder sb = new StringBuilder();
-        for (String w : m.name().toLowerCase().split("_")) {
+        for (String w : raw.toLowerCase().split("_")) {
             if (w.isEmpty()) continue;
             if (sb.length() > 0) sb.append(' ');
             sb.append(Character.toUpperCase(w.charAt(0))).append(w.substring(1));
         }
         return sb.toString();
     }
-                }
+                                          }
